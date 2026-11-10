@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hiệu Ứng Trái Tim Interactive</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #050508;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Controls Panel */
+        .controls {
+            position: absolute;
+            bottom: 25px;
+            z-index: 10;
+            background: rgba(15, 15, 25, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 18px 24px;
+            border-radius: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            transition: all 0.3s ease;
+        }
+
+        .controls:hover {
+            background: rgba(20, 20, 35, 0.85);
+            border-color: rgba(255, 105, 180, 0.3);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 13px;
+            color: #d1d1d1;
+        }
+
+        .control-group label {
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 110px;
+            height: 6px;
+            background: #2a2a3a;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #ff4081;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        input[type="color"]::-webkit-color-swatch {
+            border: 2px solid rgba(255,255,255,0.4);
+            border-radius: 50%;
+        }
+
+        /* Title Overlay */
+        .header-title {
+            position: absolute;
+            top: 25px;
+            z-index: 10;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 4px;
+            background: linear-gradient(45deg, #ff4081, #ff80ab, #ffffff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px rgba(255, 64, 129, 0.4);
+        }
+
+        .header-title p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 4px;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-title">
+        <h1>Heartbeat Particles</h1>
+        <p>Di chuyển chuột để tương tác</p>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="heartCanvas"></canvas>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="colorPicker">Màu sắc</label>
+            <input type="color" id="colorPicker" value="#ff2a6d">
+        </div>
+        <div class="control-group">
+            <label for="speedRange">Nhịp đập</label>
+            <input type="range" id="speedRange" min="0.5" max="3" step="0.1" value="1">
+        </div>
+        <div class="control-group">
+            <label for="countRange">Số hạt (<span id="particleCountLabel">1.2k</span>)</label>
+            <input type="range" id="countRange" min="500" max="2500" step="100" value="1200">
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let particles = [];
+        let heartPoints = [];
+        let textPoints = [];
+        let shadowTextPoints = [];
+        let floatingHearts = []; // Danh sách các trái tim nhỏ xung quanh
+        
+        // Thiết lập cấu hình mặc định
+        const config = {
+            color: '#ff2a6d',
+            speed: 1,
+            particleCount: 1500,
+            heartScale: 16,
+            floatingHeartCount: 40 // Số lượng trái tim bay xung quanh
+        };
+
+        // Lấy các element điều khiển
+        const colorPicker = document.getElementById('colorPicker');
+        const speedRange = document.getElementById('speedRange');
+        const countRange = document.getElementById('countRange');
+        const particleCountLabel = document.getElementById('particleCountLabel');
+
+        // Hàm định dạng số thành chữ 'k'
+        function formatK(val) {
+            return (val / 1000) + 'k';
+        }
+
+        colorPicker.addEventListener('input', (e) => config.color = e.target.value);
+        speedRange.addEventListener('input', (e) => config.speed = parseFloat(e.target.value));
+        countRange.addEventListener('input', (e) => {
+            config.particleCount = parseInt(e.target.value);
+            particleCountLabel.textContent = formatK(config.particleCount);
+            initParticles();
+        });
+
+        // Tọa độ chuột
+        const mouse = {
+            x: null,
+            y: null,
+            radius: 100
+        };
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.x;
+            mouse.y = e.y;
+        });
+
+        window.addEventListener('mouseleave', () => {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        // Tạo danh sách điểm cho chữ "kmi" ở chính giữa trái tim
+        function generateTextPoints() {
+            textPoints = [];
+            shadowTextPoints = [];
+            const offCanvas = document.createElement('canvas');
+            const offCtx = offCanvas.getContext('2d');
+            offCanvas.width = 300;
+            offCanvas.height = 150;
+
+            // 1. Vẽ bản đồ chữ đen (viền viền xung quanh) để làm bóng mờ viền hạt tối
+            offCtx.fillStyle = '#000000';
+            offCtx.font = 'bold 90px "Segoe UI", Arial, sans-serif';
+            offCtx.textAlign = 'center';
+            offCtx.textBaseline = 'middle';
+            offCtx.lineWidth = 14;
+            offCtx.strokeStyle = '#ffffff';
+            offCtx.strokeText('kmi', offCanvas.width / 2, offCanvas.height / 2);
+
+            let imageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+            let data = imageData.data;
+            const step = 3;
+
+            for (let y = 0; y < offCanvas.height; y += step) {
+                for (let x = 0; x < offCanvas.width; x += step) {
+                    const index = (y * offCanvas.width + x) * 4;
+                    if (data[index + 3] > 128) {
+                        shadowTextPoints.push({
+                            x: (x - offCanvas.width / 2) * (config.heartScale / 16) * 0.95,
+                            y: (y - offCanvas.height / 2) * (config.heartScale / 16) * 0.95 - (config.heartScale * 1.5)
+                        });
+                    }
+                }
+            }
+
+            // 2. Vẽ chữ trắng chuẩn ở lòng trong
+            offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+            offCtx.fillStyle = '#ffffff';
+            offCtx.fillText('kmi', offCanvas.width / 2, offCanvas.height / 2);
+
+            imageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+            data = imageData.data;
+
+            for (let y = 0; y < offCanvas.height; y += step) {
+                for (let x = 0; x < offCanvas.width; x += step) {
+                    const index = (y * offCanvas.width + x) * 4;
+                    if (data[index + 3] > 128) {
+                        textPoints.push({
+                            x: (x - offCanvas.width / 2) * (config.heartScale / 16) * 0.95,
+                            y: (y - offCanvas.height / 2) * (config.heartScale / 16) * 0.95 - (config.heartScale * 1.5)
+                        });
+                    }
+                }
+            }
+        }
+
+        // Thay đổi kích thước Canvas khi đổi size màn hình
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            
+            // Điều chỉnh quy mô hình trái tim theo kích thước màn hình
+            config.heartScale = Math.min(width, height) / 45;
+            generateTextPoints();
+            generateHeartPoints();
+            initParticles();
+            initFloatingHearts();
+        }
+
+        window.addEventListener('resize', resize);
+
+        // Định dạng công thức toán học hình Trái Tim (Parametric Heart Equation)
+        function getHeartPoint(t) {
+            const x = 16 * Math.pow(Math.sin(t), 3);
+            const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+            return { x, y };
+        }
+
+        // Tạo mảng điểm mô phỏng viền và bên trong hình trái tim
+        function generateHeartPoints() {
+            heartPoints = [];
+            
+            // Điểm thuộc viền
+            for (let t = 0; t < Math.PI * 2; t += 0.01) {
+                const pt = getHeartPoint(t);
+                heartPoints.push({
+                    x: pt.x * config.heartScale,
+                    y: pt.y * config.heartScale
+                });
+            }
+
+            // Điểm lấp đầy lồng trong trái tim (chừa mật độ để hiển thị chữ rõ hơn)
+            const innerCount = 600;
+            for (let i = 0; i < innerCount; i++) {
+                const t = Math.random() * Math.PI * 2;
+                const innerScale = Math.sqrt(Math.random()); // Phân bố đều
+                const pt = getHeartPoint(t);
+                heartPoints.push({
+                    x: pt.x * config.heartScale * innerScale,
+                    y: pt.y * config.heartScale * innerScale
+                });
+            }
+        }
+
+        // Lớp Trái tim nhỏ bay bồng bềnh xung quanh (Floating Small Hearts)
+        class FloatingHeart {
+            constructor() {
+                this.reset(true);
+            }
+
+            reset(initial = false) {
+                // Xuất phát xung quanh tâm hoặc lan tỏa từ trái tim lớn
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * (config.heartScale * 12) + (config.heartScale * 6);
+                
+                this.x = Math.cos(angle) * distance;
+                this.y = Math.sin(angle) * distance;
+                
+                // Kích thước ngẫu nhiên cho trái tim nhỏ
+                this.size = Math.random() * 8 + 4;
+                
+                // Hướng & Tốc độ bay (bay nhẹ lên trên và xoay nhẹ)
+                this.vx = (Math.random() - 0.5) * 0.8;
+                this.vy = -(Math.random() * 1.2 + 0.3);
+                
+                this.alpha = initial ? Math.random() : 0;
+                this.maxAlpha = Math.random() * 0.6 + 0.3;
+                this.fadeIn = true;
+                this.scale = Math.random() * 0.5 + 0.5;
+                this.rotation = (Math.random() - 0.5) * 0.4;
+                this.rotSpeed = (Math.random() - 0.5) * 0.02;
+            }
+
+            update() {
+                this.x += this.vx * config.speed;
+                this.y += this.vy * config.speed;
+                this.rotation += this.rotSpeed * config.speed;
+
+                // Xử lý hiện/mờ dần (Fade in / Fade out)
+                if (this.fadeIn) {
+                    this.alpha += 0.015 * config.speed;
+                    if (this.alpha >= this.maxAlpha) {
+                        this.alpha = this.maxAlpha;
+                        this.fadeIn = false;
+                    }
+                } else {
+                    this.alpha -= 0.005 * config.speed;
+                    if (this.alpha <= 0) {
+                        this.reset();
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x + width / 2, this.y + height / 2);
+                ctx.rotate(this.rotation);
+                ctx.scale(this.scale, this.scale);
+                ctx.globalAlpha = Math.max(0, this.alpha);
+                
+                ctx.fillStyle = config.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = config.color;
+
+                // Vẽ hình trái tim nhỏ bằng Path
+                ctx.beginPath();
+                const topCurveHeight = this.size * 0.3;
+                ctx.moveTo(0, topCurveHeight);
+                // Nửa trái
+                ctx.bezierCurveTo(
+                    -this.size / 2, -this.size / 2, 
+                    -this.size, topCurveHeight, 
+                    0, this.size
+                );
+                // Nửa phải
+                ctx.bezierCurveTo(
+                    this.size, topCurveHeight, 
+                    this.size / 2, -this.size / 2, 
+                    0, topCurveHeight
+                );
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        function initFloatingHearts() {
+            floatingHearts = [];
+            for (let i = 0; i < config.floatingHeartCount; i++) {
+                floatingHearts.push(new FloatingHeart());
+            }
+        }
+
+        // Lớp hạt Particle (Vẽ các hạt của Trái tim và Chữ kmi)
+        class Particle {
+            constructor(type) {
+                this.type = type; // 'heart', 'text', hoặc 'shadow'
+                this.reset();
+            }
+
+            reset() {
+                let target;
+                if (this.type === 'text' && textPoints.length > 0) {
+                    target = textPoints[Math.floor(Math.random() * textPoints.length)];
+                    this.baseSize = Math.random() * 2 + 1.8;
+                    this.color = '#ffffff';
+                } else if (this.type === 'shadow' && shadowTextPoints.length > 0) {
+                    target = shadowTextPoints[Math.floor(Math.random() * shadowTextPoints.length)];
+                    this.baseSize = Math.random() * 3.5 + 2.5;
+                    this.color = '#020205';
+                } else {
+                    this.type = 'heart';
+                    target = heartPoints[Math.floor(Math.random() * heartPoints.length)];
+                    this.baseSize = Math.random() * 2.5 + 1;
+                    this.color = config.color;
+                }
+
+                if (target) {
+                    this.baseX = target.x;
+                    this.baseY = target.y;
+                } else {
+                    this.baseX = 0;
+                    this.baseY = 0;
+                }
+
+                this.x = this.baseX;
+                this.y = this.baseY;
+                this.size = this.baseSize;
+                this.alpha = Math.random() * 0.7 + 0.3;
+                this.speed = Math.random() * 0.05 + 0.02;
+                
+                // Độ chênh lệch chuyển động nhẹ riêng từng hạt
+                this.friction = 0.88;
+                this.vx = 0;
+                this.vy = 0;
+            }
+
+            update(scaleFactor) {
+                // Tọa độ mục tiêu theo nhịp đập trái tim
+                const targetX = this.baseX * scaleFactor;
+                const targetY = this.baseY * scaleFactor;
+
+                // Tương tác với con trỏ chuột
+                if (mouse.x !== null && mouse.y !== null) {
+                    const screenX = targetX + width / 2;
+                    const screenY = targetY + height / 2;
+                    const dx = mouse.x - screenX;
+                    const dy = mouse.y - screenY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < mouse.radius) {
+                        const force = (mouse.radius - dist) / mouse.radius;
+                        const angle = Math.atan2(dy, dx);
+                        this.vx -= Math.cos(angle) * force * 4;
+                        this.vy -= Math.sin(angle) * force * 4;
+                    }
+                }
+
+                // Chuyển động vật lý đàn hồi trở về vị trí ban đầu
+                this.vx += (targetX - this.x) * this.speed;
+                this.vy += (targetY - this.y) * this.speed;
+
+                this.vx *= this.friction;
+                this.vy *= this.friction;
+
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(width / 2, height / 2);
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+
+                if (this.type === 'text') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ffffff';
+                } else if (this.type === 'shadow') {
+                    ctx.fillStyle = '#020205';
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = config.color;
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = config.color;
+                }
+
+                ctx.globalAlpha = this.alpha;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Khởi tạo danh sách hạt
+        function initParticles() {
+            particles = [];
+            const textParticleCount = Math.min(Math.floor(config.particleCount * 0.35), textPoints.length * 2);
+            const shadowParticleCount = Math.min(Math.floor(config.particleCount * 0.25), shadowTextPoints.length * 2);
+            const heartParticleCount = Math.max(0, config.particleCount - textParticleCount - shadowParticleCount);
+
+            // Hạt cấu tạo viền tối chữ "kmi" (nằm lớp dưới cùng)
+            for (let i = 0; i < shadowParticleCount; i++) {
+                particles.push(new Particle('shadow'));
+            }
+            // Hạt cấu tạo hình trái tim
+            for (let i = 0; i < heartParticleCount; i++) {
+                particles.push(new Particle('heart'));
+            }
+            // Hạt cấu tạo chữ "kmi" sáng trắng (nằm trên cùng)
+            for (let i = 0; i < textParticleCount; i++) {
+                particles.push(new Particle('text'));
+            }
+        }
+
+        // Biến phục vụ nhịp đập (Heartbeat Logic)
+        let time = 0;
+
+        function animate() {
+            ctx.fillStyle = 'rgba(5, 5, 8, 0.25)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Tăng biến thời gian dựa trên tốc độ cấu hình
+            time += 0.03 * config.speed;
+
+            // Thuật toán nhịp đập phập phồng tự nhiên (Double Pulse)
+            const beat = Math.sin(time) * 0.1 + Math.sin(time * 2) * 0.05;
+            const scaleFactor = 1 + beat;
+
+            // 1. Cập nhật & Vẽ các trái tim nhỏ xung quanh trước (ở dưới)
+            for (let i = 0; i < floatingHearts.length; i++) {
+                floatingHearts[i].update();
+                floatingHearts[i].draw();
+            }
+
+            // 2. Cập nhật & Vẽ tất cả các hạt hạt trái tim & chữ kmi
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update(scaleFactor);
+                particles[i].draw();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Khởi chạy ứng dụng khi load xong
+        window.onload = () => {
+            resize();
+            animate();
+        };
+    </script>
+</body>
+</html>
